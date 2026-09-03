@@ -26,7 +26,8 @@ from .href_mapper import HrefMapper
 
 
 class EteSync(api.EteSync):
-    def _init_db_tables(self, database, additional_tables=[]):
+    def _init_db_tables(self, database, additional_tables=None):
+        additional_tables = [] if additional_tables is None else additional_tables
         super()._init_db_tables(database, additional_tables + [HrefMapper])
 
 

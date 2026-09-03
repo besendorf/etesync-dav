@@ -14,15 +14,19 @@
 
 import hashlib
 import logging
+import os
 import posixpath
 import re
+import sqlite3
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 
 import etesync as api
+import radicale
 import vobject
 from etebase import etebase_python
+from packaging.version import Version
 from radicale import pathutils
 from radicale.item import Item, get_etag
 from radicale.storage import (
@@ -31,7 +35,9 @@ from radicale.storage import (
     ComponentNotFoundError,
 )
 
+from ..config import CREDS_FILE, DATABASE_FILE, ETEBASE_DATABASE_FILE, HTPASSWD_FILE
 from ..local_cache import COL_TYPES, Etebase
+from .creds import Credentials
 from .etesync_cache import etesync_for_user, refresh_etebase_token
 from .href_mapper import HrefMapper
 from .storage_etebase_collection import Collection as EtebaseCollection
@@ -430,7 +436,10 @@ class Collection(BaseCollection):
             href_mapper = HrefMapper(content=etesync_item._cache_obj, href=href)
             href_mapper.save(force_insert=True)
 
-        return self._get(href)
+        uploaded = self._get(href)
+        if Version(radicale.VERSION) >= Version("3.5.5"):
+            return uploaded, item
+        return uploaded
 
     def delete(self, href=None):
         """Delete an item.
@@ -510,7 +519,39 @@ class Storage(BaseStorage):
         self._etesync_user_lock = threading.RLock()
         super().__init__(configuration)
 
-    def discover(self, path, depth="0", child_context_manager=None, user_groups=set([])):
+    def verify(self):
+        """Check local account metadata and SQLite databases for corruption."""
+        try:
+            credential_users = set(Credentials(CREDS_FILE).list())
+            password_users = set()
+            if os.path.exists(HTPASSWD_FILE):
+                with open(HTPASSWD_FILE, encoding="utf-8") as password_file:
+                    for line_number, line in enumerate(password_file, start=1):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        if ":" not in line or not line.split(":", 1)[0]:
+                            logger.error("Malformed password entry at %s:%d", HTPASSWD_FILE, line_number)
+                            return False
+                        password_users.add(line.split(":", 1)[0])
+
+            if credential_users != password_users:
+                logger.error("Credential and password files contain different account sets")
+                return False
+
+            for database_path in (DATABASE_FILE, ETEBASE_DATABASE_FILE):
+                if not os.path.exists(database_path):
+                    continue
+                with closing(sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)) as database:
+                    if database.execute("PRAGMA quick_check").fetchone() != ("ok",):
+                        logger.error("SQLite integrity check failed for %s", database_path)
+                        return False
+            return True
+        except Exception:
+            logger.exception("Storage verification failed")
+            return False
+
+    def discover(self, path, depth="0", child_context_manager=None, user_groups=frozenset()):
         """Discover a list of collections under the given ``path``.
 
         If ``depth`` is "0", only the actual object under ``path`` is
@@ -589,7 +630,7 @@ class Storage(BaseStorage):
         same name might already exist.
 
         """
-        raise NotImplementedError
+        raise ValueError("[Errno 13] Moving DAV items is not supported by EteSync")
 
     def create_collection(self, href, items=None, props=None):
         """Create a collection.
@@ -610,8 +651,7 @@ class Storage(BaseStorage):
 
         """
 
-        # We don't want to allow this
-        raise NotImplementedError
+        raise ValueError("[Errno 13] Create collections in an EteSync client")
 
     @contextmanager
     def acquire_lock(self, mode, user=None, *args, **kwargs):
@@ -624,6 +664,7 @@ class Storage(BaseStorage):
 
         """
         if not user:
+            yield
             return
 
         with etesync_for_user(user) as (etesync, _):
