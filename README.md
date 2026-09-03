@@ -37,8 +37,12 @@ Don't forget to set up EteSync to automatically start on startup. Instructions f
 
 ## Common environment variables
 
-* `ETESYNC_LISTEN_ADDRESS`: a hostname or IP address to listen on. Requests to a different host/ip will be block for the admin UI. Uses as the default value for the next setting.
-* `ETESYNC_SERVER_HOSTS`: defaults to `{ETESYNC_LISTEN_ADDRESS}:37358`. Otherwise, a list of IP masks, hostnames, and ports for the server to listen on. E.g. `0.0.0.0:37358,[::]:37358` for listening on all ipv4 and ipv6 addresses and port 37358, or `localhost:37358` to only allow requests from localhost.
+* `ETESYNC_LISTEN_ADDRESS`: a hostname or IP address to listen on. Requests to a different host or IP are blocked for the admin UI. Used as the default value for the next setting.
+* `ETESYNC_LISTEN_PORT`: the default TCP port, `37358` when unset.
+* `ETESYNC_SERVER_HOSTS`: defaults to `{ETESYNC_LISTEN_ADDRESS}:{ETESYNC_LISTEN_PORT}`. Otherwise, a list of IP masks, hostnames, and ports for the server to listen on. E.g. `0.0.0.0:37358,[::]:37358` for listening on all IPv4 and IPv6 addresses and port 37358, or `localhost:37358` to only allow requests from localhost.
+* `ETESYNC_DAV_URL`: the externally visible DAV root URL when running behind a reverse proxy.
+
+The management UI can add and remove accounts and display DAV passwords. Keep it bound to localhost unless access is protected by a trusted private network and TLS.
 
 # Setting up clients
 
@@ -147,7 +151,7 @@ Enable autostart by for example following [these instructions](https://www.howto
 
 ### Windows
 
-Follow [these instructions](https://www.howtogeek.com/228467/how-to-make-a-program-run-at-startup-on-any-computer/).
+Place the standalone executable in a permanent directory, then add it to the current user's Startup apps. One option is a shortcut in the folder opened by `shell:startup`; another is a per-user `Run` registry entry. Avoid starting a second copy from another installation method.
 
 # Alternative Installation Methods
 
@@ -189,7 +193,7 @@ You can either follow the Docker instructions above (get Docker [here](https://w
 
 ## Python virtual environment (Linux, BSD and Mac)
 
-Install virtual env (for **Python 3**) from your package manager, for example:
+Install virtual env for **Python 3.10** from your package manager, for example:
 
 - Arch Linux: pacman -S python-virtualenv
 - Debian/Ubuntu: apt-get install python3-virtualenv
@@ -286,7 +290,13 @@ for your platform. For example:
 3. `C:\Documents and Settings\<User>\Application Data\Local Settings\etesync\etesync-dav` on older Windows
 4. `C:\Users\<User>\AppData\Local\etesync\etesync-dav` on Windows 7 and up (Most likely)
 
-See the [appdirs](https://pypi.python.org/pypi/appdirs) module docs for mor examples.
+See the [appdirs](https://pypi.python.org/pypi/appdirs) module docs for more examples.
+
+The credentials file contains reusable Etebase session data and the password file contains DAV passwords. They are written atomically with private file permissions, but backups of the data directory must be protected as secrets too.
+
+## Development and reproducible builds
+
+Runtime, development, and PyInstaller dependencies are stored in separate universal lock files with package hashes. Regenerate them from `pyproject.toml` and `requirements.in/` using `uv pip compile --universal --generate-hashes`, then run the unit tests, Ruff, `check-manifest`, the package build, and `pip-audit` before committing the result.
 
 # Credits
 

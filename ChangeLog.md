@@ -1,5 +1,15 @@
 # Changelog
 
+## Version 0.36.0
+* Refresh the dependency lock and support Radicale 3.8 and Peewee 4.
+* Fix Etebase collection metadata and deletion syncing.
+* Refresh expired Etebase sessions automatically.
+* Restrict management actions to authenticated users and harden credential storage.
+* Add real cross-platform tests, dependency auditing, and reproducible binary builds.
+* Respect configured DAV addresses and ports in generated URLs.
+* Fall back to the private data directory when a configured log path cannot be opened.
+* Declare Python 3.10 as the supported runtime because that is the newest version with official Etebase binaries.
+
 ## Version 0.35.1
 * Bump to rebuild binaries.
 

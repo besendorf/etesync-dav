@@ -1,14 +1,21 @@
 Session.vim
 /.venv
+/.venv-*
 /.coverage
 /etesync.db
+/.smoke-*
+/.wheel-cache
+/build
 
 /dist
 
 /pyinstaller/etesync-dav.spec
 /pyinstaller/build
+/pyinstaller/build-next
 /pyinstaller/dist
+/pyinstaller/dist-next
 /pyinstaller/.venv
+/pyinstaller/*.log
 
 /old
 
