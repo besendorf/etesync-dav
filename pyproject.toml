@@ -1,9 +1,55 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "etesync-dav"
+dynamic = ["version"]
+description = "A CalDAV and CardDAV frontend for EteSync"
+readme = { file = "DESCRIPTION.rst", content-type = "text/x-rst" }
+requires-python = ">=3.10,<3.11"
+license = "GPL-3.0-only"
+authors = [{ name = "Tom Hacohen", email = "tom@stosb.com" }]
+keywords = ["etesync", "encryption", "sync", "pim", "caldav", "carddav"]
+dependencies = [
+    "appdirs>=1.4.4",
+    "etesync>=0.12.1",
+    "etebase>=0.30.0",
+    "filelock>=3.20,<4",
+    "Flask>=3.1.3,<4",
+    "Flask-WTF>=1.2.2,<2",
+    "msgpack>=1.2.1,<2",
+    "packaging>=24",
+    "peewee>=3.17.9,<5",
+    "Radicale>=3.2.0,<3.9.0",
+    "requests[socks]>=2.33.0,<3",
+    "pyobjc-framework-Cocoa>=7.0.0; sys_platform == 'darwin'",
+    "pyscrypt>=1.2.6; sys_platform == 'darwin'",
+]
+
+[project.urls]
+Documentation = "https://github.com/besendorf/etesync-dav/blob/master/README.md#installation"
+Changelog = "https://github.com/besendorf/etesync-dav/blob/master/ChangeLog.md"
+Issues = "https://github.com/besendorf/etesync-dav/issues"
+Source = "https://github.com/besendorf/etesync-dav"
+
+[tool.setuptools]
+include-package-data = false
+zip-safe = false
+
+[tool.setuptools.package-data]
+etesync_dav = ["templates/*.html"]
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "tests.*"]
+include = ["etesync_dav*"]
+namespaces = false
+
+[tool.setuptools.dynamic]
+version = { attr = "etesync_dav.__version__" }
+
 [tool.black]
 line-length = 120
-
-[build-system]
-requires = ["setuptools>=42"]
-build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 line-length = 120
@@ -14,6 +60,7 @@ exclude = [
     ".pytype",
     ".ruff_cache",
     ".venv",
+    ".venv-*",
     "build",
     "dist",
     "node_modules",
