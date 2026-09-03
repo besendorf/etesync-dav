@@ -28,7 +28,7 @@ jobs:
         include:
           - { os: ubuntu-latest, python: '3.10' }
           - { os: windows-latest, python: '3.10' }
-          - { os: macos-13, python: '3.10' }
+          - { os: macos-15-intel, python: '3.10' }
           - { os: ubuntu-22.04-arm, python: '3.10' }
 
     steps:
