@@ -14,7 +14,7 @@
 
 import hashlib
 import os
-import random
+import secrets
 import string
 import time
 
@@ -22,6 +22,7 @@ import etebase as Etebase
 import etesync as api
 
 from etesync_dav.config import CREDS_FILE, DATA_DIR, ETESYNC_URL, HTPASSWD_FILE, LEGACY_CONFIG_DIR, LEGACY_ETESYNC_URL
+from etesync_dav.fileutils import atomic_write_text, locked_path
 
 from . import local_cache
 from .radicale.creds import Credentials
@@ -31,28 +32,61 @@ from .radicale.etesync_cache import etesync_for_user
 class Htpasswd:
     def __init__(self, filename):
         self.filename = filename
+        self.content = {}
+        self._dirty_users = set()
+        self._deleted_users = set()
         self.load()
 
+    def _read(self):
+        content = {}
+        if not os.path.exists(self.filename):
+            return content
+
+        with open(self.filename, "r", encoding="utf-8") as f:
+            for line_number, line in enumerate(f, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                if ":" not in line:
+                    raise ValueError(f"Malformed password entry at {self.filename}:{line_number}")
+                name, password = line.split(":", 1)
+                if not name:
+                    raise ValueError(f"Empty username at {self.filename}:{line_number}")
+                content[name] = password
+        return content
+
     def load(self):
-        if os.path.exists(self.filename):
-            with open(self.filename, "r") as f:
-                self.content = dict(map(lambda x: x.strip(), line.split(":", 1)) for line in f)
-        else:
-            self.content = {}
+        with locked_path(self.filename):
+            pending = {username: self.content[username] for username in self._dirty_users}
+            self.content = self._read()
+            self.content.update(pending)
+            for username in self._deleted_users:
+                self.content.pop(username, None)
 
     def save(self):
-        with open(self.filename, "w") as f:
-            for name, password in self.content.items():
-                print("{}:{}".format(name, password), file=f)
+        with locked_path(self.filename):
+            content = self._read()
+            content.update({username: self.content[username] for username in self._dirty_users})
+            for username in self._deleted_users:
+                content.pop(username, None)
+            self.content = content
+            content = "".join(f"{name}:{password}\n" for name, password in self.content.items())
+            atomic_write_text(self.filename, content)
+            self._dirty_users.clear()
+            self._deleted_users.clear()
 
     def get(self, username):
         return self.content.get(username, None)
 
     def set(self, username, password):
         self.content[username] = password
+        self._dirty_users.add(username)
+        self._deleted_users.discard(username)
 
     def delete(self, username):
         self.content.pop(username, None)
+        self._dirty_users.discard(username)
+        self._deleted_users.add(username)
 
     def list(self):
         for item in self.content.keys():
@@ -77,10 +111,9 @@ class Manager:
             # Create a missing htpasswd file if missing
             self.htpasswd.save()
 
-    def _generate_pasword(self):
-        return "".join(
-            [random.choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for i in range(16)]
-        )
+    def _generate_password(self):
+        alphabet = string.ascii_letters + string.digits
+        return "".join(secrets.choice(alphabet) for _ in range(32))
 
     def validate_username(self, username):
         if username is None:
@@ -124,11 +157,11 @@ class Manager:
         cipher_key = etesync.derive_key(encryption_password)
 
         print("Saving config")
-        generated_password = self._generate_pasword()
+        generated_password = self._generate_password()
         self.htpasswd.set(username, generated_password)
         self.creds.set(username, auth_token, cipher_key, remote_url)
-        self.htpasswd.save()
         self.creds.save()
+        self.htpasswd.save()
 
         print("Initializing account")
         try:
@@ -172,11 +205,11 @@ class Manager:
         etebase = Etebase.Account.login(client, username, password)
 
         print("Saving config")
-        generated_password = self._generate_pasword()
+        generated_password = self._generate_password()
         self.htpasswd.set(username, generated_password)
         self.creds.set_etebase(username, etebase.save(None), remote_url)
-        self.htpasswd.save()
         self.creds.save()
+        self.htpasswd.save()
 
         print("Initializing account")
         try:

@@ -17,6 +17,7 @@ import json
 import os
 
 from etesync_dav.config import LEGACY_ETESYNC_URL
+from etesync_dav.fileutils import atomic_write_text, locked_path
 
 
 class Credentials:
@@ -24,19 +25,40 @@ class Credentials:
         self.filename = filename
         self.last_mtime = 0
         self.content = {"users": {}}
+        self._dirty_users = set()
+        self._deleted_users = set()
         self.load()
 
+    def _read_users(self):
+        if not os.path.exists(self.filename):
+            return {}
+        with open(self.filename, "r", encoding="utf-8") as f:
+            return json.load(f).get("users", {})
+
     def load(self):
-        if os.path.exists(self.filename):
-            mtime = os.path.getmtime(self.filename)
-            if mtime != self.last_mtime:
-                with open(self.filename, "r") as f:
-                    self.content = json.load(f)
-            self.last_mtime = mtime
+        with locked_path(self.filename):
+            if os.path.exists(self.filename):
+                mtime = os.path.getmtime(self.filename)
+                if mtime != self.last_mtime:
+                    pending = {username: self.content["users"][username] for username in self._dirty_users}
+                    users = self._read_users()
+                    users.update(pending)
+                    for username in self._deleted_users:
+                        users.pop(username, None)
+                    self.content = {"users": users}
+                self.last_mtime = mtime
 
     def save(self):
-        with open(self.filename, "w") as f:
-            json.dump(self.content, f)
+        with locked_path(self.filename):
+            users = self._read_users()
+            users.update({username: self.content["users"][username] for username in self._dirty_users})
+            for username in self._deleted_users:
+                users.pop(username, None)
+            self.content = {"users": users}
+            atomic_write_text(self.filename, json.dumps(self.content, separators=(",", ":")))
+            self.last_mtime = os.path.getmtime(self.filename)
+            self._dirty_users.clear()
+            self._deleted_users.clear()
 
     def get_server_url(self, username):
         users = self.content["users"]
@@ -58,6 +80,8 @@ class Credentials:
         users = self.content["users"]
         user = {"authToken": auth_token, "cipherKey": base64.b64encode(cipher_key).decode(), "serverUrl": server_url}
         users[username] = user
+        self._dirty_users.add(username)
+        self._deleted_users.discard(username)
 
     def get_etebase(self, username):
         users = self.content["users"]
@@ -71,7 +95,14 @@ class Credentials:
         users = self.content["users"]
         user = {"storedSession": stored_session, "serverUrl": server_url}
         users[username] = user
+        self._dirty_users.add(username)
+        self._deleted_users.discard(username)
 
     def delete(self, username):
         users = self.content["users"]
         users.pop(username, None)
+        self._dirty_users.discard(username)
+        self._deleted_users.add(username)
+
+    def list(self):
+        yield from self.content["users"]
