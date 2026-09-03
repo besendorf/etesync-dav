@@ -148,13 +148,16 @@ class Etebase:
             changed = self._collection_list_dirty_get()
 
             for collection in changed:
-                col = col_mgr.cache_load(changed.eb_col)
+                col = col_mgr.cache_load(collection.eb_col)
 
                 if collection.deleted:
                     col.delete()
                 col_mgr.upload(col, None)
 
+                collection.eb_col = col_mgr.cache_save(col)
+                collection.stoken = col.stoken
                 collection.dirty = False
+                collection.new = False
                 collection.save()
 
     def sync_collection(self, uid):
@@ -291,7 +294,15 @@ class Collection:
         meta.update(update_info)
         self.col.meta = meta
         self.cache_col.eb_col = self.col_mgr.cache_save(self.col)
+        self.cache_col.dirty = True
         self.cache_col.save()
+
+    def delete(self):
+        """Mark the collection for deletion during the next sync."""
+        with db.database_proxy:
+            self.cache_col.deleted = True
+            self.cache_col.dirty = True
+            self.cache_col.save()
 
     # CRUD
     def create(self, vobject_item):
