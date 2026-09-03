@@ -26,6 +26,8 @@ recursive-exclude pyinstaller *
 include requirements.txt
 include requirements.in/*.txt
 include requirements-dev.txt
+include requirements-build.txt
+include scripts/generate_checksums.py
 
 # Add templates for the management UI.
 recursive-include etesync_dav/templates *
