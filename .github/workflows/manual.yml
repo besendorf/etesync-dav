@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing v* tag to build and publish (leave blank for a validation build)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -20,6 +25,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - uses: actions/setup-python@v7
         name: Install Python
@@ -59,7 +66,7 @@ jobs:
 
   publish_release:
     name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && startsWith(inputs.release_tag, 'v'))
     needs: build_pyinstaller
     runs-on: ubuntu-latest
     permissions:
@@ -77,6 +84,7 @@ jobs:
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         shell: bash
         run: |
           mapfile -t files < <(find release -maxdepth 1 -type f -print | sort)
@@ -85,12 +93,12 @@ jobs:
             exit 1
           fi
 
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" --clobber "${files[@]}"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" --clobber "${files[@]}"
           else
-            gh release create "$GITHUB_REF_NAME" \
+            gh release create "$RELEASE_TAG" \
               --verify-tag \
               --generate-notes \
-              --title "EteSync DAV $GITHUB_REF_NAME" \
+              --title "EteSync DAV $RELEASE_TAG" \
               "${files[@]}"
           fi
