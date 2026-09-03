@@ -51,7 +51,7 @@ jobs:
       - name: Generate release checksums
         run: python scripts/generate_checksums.py pyinstaller/deploy
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: dist-${{ matrix.os }}
           path: ./pyinstaller/deploy/*
