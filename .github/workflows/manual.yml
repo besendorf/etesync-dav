@@ -46,7 +46,7 @@ jobs:
           ./bundle.sh
 
       - name: Generate dependency SBOM
-        run: pip-audit --require-hashes -r requirements.txt --format cyclonedx-json --output pyinstaller/deploy/sbom.json
+        run: pip-audit --require-hashes --disable-pip -r requirements.txt --format cyclonedx-json --output pyinstaller/deploy/sbom.json
 
       - name: Generate release checksums
         run: python scripts/generate_checksums.py pyinstaller/deploy
