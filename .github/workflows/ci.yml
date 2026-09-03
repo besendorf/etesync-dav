@@ -2,12 +2,12 @@ name: CI
 
 on:
   push:
-    branches:
-      - master
-
+    branches: [master]
   pull_request:
-    branches:
-      - master
+    branches: [master]
+
+permissions:
+  contents: read
 
 defaults:
   run:
@@ -23,37 +23,38 @@ jobs:
     timeout-minutes: 30
 
     strategy:
-      # When set to true, GitHub cancels
-      # all in-progress jobs if any matrix job fails.
       fail-fast: false
-
       matrix:
-        python:
-          # Versions 3.0 - 3.5 are not provided by actions/python-versions
-          - '3.9'
-          - '3.10'
-          - '3.11'
-          - '3.12'
-        os: [ubuntu-latest, windows-latest, macos-latest, ubuntu-22.04-arm]
+        include:
+          - { os: ubuntu-latest, python: '3.10' }
+          - { os: windows-latest, python: '3.10' }
+          - { os: macos-13, python: '3.10' }
+          - { os: ubuntu-22.04-arm, python: '3.10' }
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
-        with:
-          fetch-depth: 5
+        uses: actions/checkout@v7
 
       - name: Set up Python ${{ matrix.python }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
+          cache: pip
 
-      - name: Minimal setuptools load-test
+      - name: Install project
         run: |
-          python -m pip install setuptools
-          python setup.py --fullname
-          python setup.py --description
-          python setup.py --long-description
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements.txt
+          python -m pip install --no-deps .
 
-      - name: Success Reporting
-        if: success()
-        run: git log --format=fuller -5
+      - name: Verify installation and tests
+        run: |
+          python -m pip check
+          python -m unittest discover -v
+          etesync-dav --version
+
+      - name: Build package
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.txt
+          python -m build

@@ -1,2 +1,5 @@
+build
+check-manifest
+pip-audit
 pip-tools
 ruff
