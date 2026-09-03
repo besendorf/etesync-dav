@@ -13,28 +13,46 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import signal
 import sys
+import threading
 from functools import wraps
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin, urlparse
 
 import etesync as api
-from flask import Flask, redirect, render_template, request, session, url_for
+from flask import Flask, abort, redirect, render_template, request, session, url_for
 from flask_wtf import FlaskForm
 from flask_wtf.csrf import CSRFProtect
 from wtforms import PasswordField, StringField, URLField
 from wtforms.validators import DataRequired, Optional, url
 
-from etesync_dav.config import ETESYNC_URL, LEGACY_ETESYNC_URL, LISTEN_ADDRESS
+from etesync_dav.config import ETESYNC_URL, LEGACY_ETESYNC_URL, LISTEN_ADDRESS, LISTEN_PORT
 from etesync_dav.local_cache import Etebase
-from etesync_dav.mac_helpers import generate_cert, has_ssl, needs_ssl, trust_cert
+from etesync_dav.mac_helpers import generate_cert, needs_ssl, trust_cert
 from etesync_dav.manage import Manager
 
 from .radicale.etesync_cache import etesync_for_user
 
-manager = Manager()
+
+class _LazyManager:
+    """Create data files only when the web UI handles its first request."""
+
+    def __init__(self):
+        self._instance = None
+        self._lock = threading.Lock()
+
+    def __getattr__(self, name):
+        if self._instance is None:
+            with self._lock:
+                if self._instance is None:
+                    self._instance = Manager()
+        return getattr(self._instance, name)
 
 
-PORT = 37359
+manager = _LazyManager()
+
+
+PORT = int(LISTEN_PORT)
 BASE_URL = os.environ.get("ETESYNC_DAV_URL", "/")
 
 
@@ -60,7 +78,7 @@ else:
     app = Flask(__name__)
 
 app.route = prefix_route(app.route, "/.web")
-app.config["TRUSTED_HOSTS"] = LISTEN_ADDRESS
+app.config["TRUSTED_HOSTS"] = sorted({LISTEN_ADDRESS, "localhost", "127.0.0.1", "[::1]"})
 
 app.secret_key = os.urandom(32)
 CSRFProtect(app)
@@ -99,13 +117,32 @@ def login_required(func):
     return decorated_view
 
 
+def setup_or_login_required(func):
+    """Allow unauthenticated access only while no account exists."""
+
+    @wraps(func)
+    def decorated_view(*args, **kwargs):
+        if not logged_in() and any(manager.list()):
+            return redirect(url_for("login"))
+        return func(*args, **kwargs)
+
+    return decorated_view
+
+
+def dav_base_url():
+    """Return the externally visible DAV root URL."""
+    if urlparse(BASE_URL).scheme:
+        return BASE_URL.rstrip("/") + "/"
+    return urljoin(request.host_url, BASE_URL.lstrip("/"))
+
+
 @app.route("/")
 @login_required
 def account_list():
     remove_user_form = UsernameForm(request.form)
     username = session["username"]
     password = manager.get(username)
-    server_url_example = "{}://localhost:37358/{}/".format("https" if has_ssl() else "http", username)
+    server_url_example = urljoin(dav_base_url(), f"{quote(username, safe='')}/")
     return render_template(
         "index.html",
         username=username,
@@ -143,7 +180,9 @@ def user_index(user):
                 collections[collection.TYPE] = collections.get(collection.TYPE, [])
                 collections[collection.TYPE].append({"name": collection.display_name, "uid": journal.uid})
 
-    return render_template("user_index.html", BASE_URL=urljoin(BASE_URL, "{}/".format(user)), collections=collections)
+    return render_template(
+        "user_index.html", BASE_URL=urljoin(dav_base_url(), f"{quote(user, safe='')}/"), collections=collections
+    )
 
 
 @app.route("/login/", methods=["GET", "POST"])
@@ -158,8 +197,9 @@ def login():
             manager.check_login(form.username.data, form.login_password.data)
             login_user(form.username.data)
             return redirect(url_for("account_list"))
-        except Exception as e:
-            errors = str(e)
+        except Exception:
+            app.logger.exception("Account login failed")
+            errors = "Login failed. Check the username, password, and server connection."
     else:
         errors = form.errors
 
@@ -181,7 +221,7 @@ def shutdown_response():
     from threading import Timer
 
     def shutdown():
-        os._exit(0)
+        signal.raise_signal(signal.SIGTERM)
 
     thread = Timer(0.5, shutdown)
     thread.start()
@@ -222,6 +262,7 @@ def certgen():
 
 
 @app.route("/add/", methods=["GET", "POST"])
+@setup_or_login_required
 def add_user():
     errors = None
     form = AddUserForm(request.form)
@@ -231,8 +272,9 @@ def add_user():
             server_url = ETESYNC_URL if server_url == "" else server_url
             manager.add_etebase(form.username.data, form.login_password.data, server_url)
             return redirect(url_for("account_list"))
-        except Exception as e:
-            errors = str(e)
+        except Exception:
+            app.logger.exception("Adding an Etebase account failed")
+            errors = "Could not add the account. Check the credentials, server URL, and connection."
     else:
         errors = form.errors
 
@@ -240,6 +282,7 @@ def add_user():
 
 
 @app.route("/add_legacy/", methods=["GET", "POST"])
+@setup_or_login_required
 def add_user_legacy():
     errors = None
     form = AddUserLegacyForm(request.form)
@@ -251,8 +294,9 @@ def add_user_legacy():
             return redirect(url_for("account_list"))
         except api.exceptions.IntegrityException:
             errors = "Wrong encryption password (failed to decrypt data)"
-        except Exception as e:
-            errors = str(e)
+        except Exception:
+            app.logger.exception("Adding a legacy EteSync account failed")
+            errors = "Could not add the account. Check the credentials, server URL, and connection."
     else:
         errors = form.errors
 
@@ -264,9 +308,12 @@ def add_user_legacy():
 def remove_user():
     form = UsernameForm(request.form)
     if form.validate_on_submit():
+        if form.username.data != session["username"]:
+            abort(403)
         manager.delete(form.username.data)
+        logout_user()
 
-    return redirect(url_for("account_list"))
+    return redirect(url_for("login"))
 
 
 class UsernameForm(FlaskForm):
