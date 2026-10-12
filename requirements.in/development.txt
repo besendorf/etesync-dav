@@ -1,5 +1,6 @@
 build
 check-manifest
+filelock<4
 pip-audit
 pip-tools
 ruff
