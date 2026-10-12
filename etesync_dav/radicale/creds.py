@@ -79,6 +79,9 @@ class Credentials:
     def set(self, username, auth_token, cipher_key, server_url):
         users = self.content["users"]
         user = {"authToken": auth_token, "cipherKey": base64.b64encode(cipher_key).decode(), "serverUrl": server_url}
+        web_session_token = users.get(username, {}).get("webSessionToken")
+        if web_session_token is not None:
+            user["webSessionToken"] = web_session_token
         users[username] = user
         self._dirty_users.add(username)
         self._deleted_users.discard(username)
@@ -94,7 +97,24 @@ class Credentials:
     def set_etebase(self, username, stored_session, server_url):
         users = self.content["users"]
         user = {"storedSession": stored_session, "serverUrl": server_url}
+        web_session_token = users.get(username, {}).get("webSessionToken")
+        if web_session_token is not None:
+            user["webSessionToken"] = web_session_token
         users[username] = user
+        self._dirty_users.add(username)
+        self._deleted_users.discard(username)
+
+    def get_web_session_token(self, username):
+        user = self.content["users"].get(username)
+        if user is None:
+            return None
+        return user.get("webSessionToken")
+
+    def set_web_session_token(self, username, token):
+        users = self.content["users"]
+        if username not in users:
+            raise RuntimeError("User not found in credentials")
+        users[username]["webSessionToken"] = token
         self._dirty_users.add(username)
         self._deleted_users.discard(username)
 

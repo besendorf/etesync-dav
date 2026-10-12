@@ -42,7 +42,10 @@ Don't forget to set up EteSync to automatically start on startup. Instructions f
 * `ETESYNC_SERVER_HOSTS`: defaults to `{ETESYNC_LISTEN_ADDRESS}:{ETESYNC_LISTEN_PORT}`. Otherwise, a list of IP masks, hostnames, and ports for the server to listen on. E.g. `0.0.0.0:37358,[::]:37358` for listening on all IPv4 and IPv6 addresses and port 37358, or `localhost:37358` to only allow requests from localhost.
 * `ETESYNC_DAV_URL`: the externally visible DAV root URL when running behind a reverse proxy.
 
-The management UI can add and remove accounts and display DAV passwords. Keep it bound to localhost unless access is protected by a trusted private network and TLS.
+The management UI can add the first account, remove the currently authenticated account, and display its DAV password.
+Add further accounts with `etesync-dav manage add USERNAME`; web-based account creation is disabled after initial setup.
+Process-wide shutdown and certificate generation are available in the web UI only for single-account installations.
+Keep the management UI bound to localhost unless access is protected by a trusted private network and TLS.
 
 # Setting up clients
 
@@ -296,7 +299,7 @@ The credentials file contains reusable Etebase session data and the password fil
 
 ## Development and reproducible builds
 
-Runtime, development, and PyInstaller dependencies are stored in separate universal lock files with package hashes. Regenerate them from `pyproject.toml` and `requirements.in/` using `uv pip compile --universal --generate-hashes`, then run the unit tests, Ruff, `check-manifest`, the package build, and `pip-audit` before committing the result.
+Runtime, development, and PyInstaller dependencies are stored in separate universal lock files with package hashes. Refresh them from `pyproject.toml` and `requirements.in/` using `uv pip compile --upgrade --universal --generate-hashes`, then run the unit tests, Ruff, `check-manifest`, the package build, and `pip-audit` before committing the result.
 
 # Credits
 

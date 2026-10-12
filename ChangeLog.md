@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+* Enforce account isolation for management actions and invalidate web sessions when accounts are deleted.
+* Validate usernames before storing them in DAV paths and password files.
+* Scope DAV href mappings to their owning collections.
+* Refresh all runtime, development, and standalone-build dependencies.
+
 ## Version 0.36.0
 * Refresh the dependency lock and support Radicale 3.8 and Peewee 4.
 * Fix Etebase collection metadata and deletion syncing.

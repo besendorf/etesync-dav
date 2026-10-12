@@ -28,6 +28,22 @@ from . import local_cache
 from .radicale.creds import Credentials
 from .radicale.etesync_cache import etesync_for_user
 
+MAX_USERNAME_LENGTH = 255
+
+
+def validate_username_value(username):
+    """Reject usernames that are unsafe in DAV paths or the password file."""
+    if not isinstance(username, str) or not username:
+        raise RuntimeError("Username is required")
+    if len(username) > MAX_USERNAME_LENGTH:
+        raise RuntimeError(f"Username can't be longer than {MAX_USERNAME_LENGTH} characters.")
+    if username != username.strip():
+        raise RuntimeError("Username can't start or end with whitespace.")
+    if any(character in username for character in (":", "/", "\\")):
+        raise RuntimeError("Username can't include ':', '/', or '\\'.")
+    if not username.isprintable():
+        raise RuntimeError("Username can't include control characters.")
+
 
 class Htpasswd:
     def __init__(self, filename):
@@ -44,14 +60,16 @@ class Htpasswd:
 
         with open(self.filename, "r", encoding="utf-8") as f:
             for line_number, line in enumerate(f, start=1):
-                line = line.strip()
-                if not line:
+                line = line.rstrip("\r\n")
+                if not line.strip():
                     continue
                 if ":" not in line:
                     raise ValueError(f"Malformed password entry at {self.filename}:{line_number}")
                 name, password = line.split(":", 1)
-                if not name:
-                    raise ValueError(f"Empty username at {self.filename}:{line_number}")
+                try:
+                    validate_username_value(name)
+                except RuntimeError as error:
+                    raise ValueError(f"Invalid username at {self.filename}:{line_number}: {error}") from error
                 content[name] = password
         return content
 
@@ -70,6 +88,8 @@ class Htpasswd:
             for username in self._deleted_users:
                 content.pop(username, None)
             self.content = content
+            for name in self.content:
+                validate_username_value(name)
             content = "".join(f"{name}:{password}\n" for name, password in self.content.items())
             atomic_write_text(self.filename, content)
             self._dirty_users.clear()
@@ -79,6 +99,7 @@ class Htpasswd:
         return self.content.get(username, None)
 
     def set(self, username, password):
+        validate_username_value(username)
         self.content[username] = password
         self._dirty_users.add(username)
         self._deleted_users.discard(username)
@@ -115,12 +136,29 @@ class Manager:
         alphabet = string.ascii_letters + string.digits
         return "".join(secrets.choice(alphabet) for _ in range(32))
 
+    def _generate_web_session_token(self):
+        return secrets.token_urlsafe(32)
+
     def validate_username(self, username):
-        if username is None:
-            raise RuntimeError("Username is required")
-        if ":" in username:
-            raise RuntimeError("Username can't include a colon.")
+        validate_username_value(username)
         return self.htpasswd.get(username) is not None
+
+    def get_web_session_token(self, username):
+        if not self.validate_username(username):
+            return None
+        self.creds.load()
+        return self.creds.get_web_session_token(username)
+
+    def get_or_create_web_session_token(self, username):
+        if not self.validate_username(username):
+            raise RuntimeError("User not found")
+        self.creds.load()
+        token = self.creds.get_web_session_token(username)
+        if token is None:
+            token = self._generate_web_session_token()
+            self.creds.set_web_session_token(username, token)
+            self.creds.save()
+        return token
 
     def check_login(self, username, password) -> None:
         server_url = self.creds.get_server_url(username)
@@ -160,6 +198,7 @@ class Manager:
         generated_password = self._generate_password()
         self.htpasswd.set(username, generated_password)
         self.creds.set(username, auth_token, cipher_key, remote_url)
+        self.creds.set_web_session_token(username, self._generate_web_session_token())
         self.creds.save()
         self.htpasswd.save()
 
@@ -208,6 +247,7 @@ class Manager:
         generated_password = self._generate_password()
         self.htpasswd.set(username, generated_password)
         self.creds.set_etebase(username, etebase.save(None), remote_url)
+        self.creds.set_web_session_token(username, self._generate_web_session_token())
         self.creds.save()
         self.htpasswd.save()
 

@@ -12,6 +12,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+import hmac
 import os
 import signal
 import sys
@@ -88,19 +89,36 @@ CSRFProtect(app)
 def inject_user():
     import etesync_dav
 
-    return dict(version=etesync_dav.__version__)
+    return dict(version=etesync_dav.__version__, can_manage_service=can_manage_service())
 
 
 def login_user(username):
     session["username"] = username
+    session["web_session_token"] = manager.get_or_create_web_session_token(username)
 
 
 def logout_user():
     session.pop("username", None)
+    session.pop("web_session_token", None)
 
 
 def logged_in():
-    return "username" in session
+    username = session.get("username")
+    session_token = session.get("web_session_token")
+    if not isinstance(username, str) or not isinstance(session_token, str):
+        return False
+    try:
+        account_token = manager.get_web_session_token(username)
+    except (RuntimeError, ValueError):
+        return False
+    return isinstance(account_token, str) and hmac.compare_digest(session_token, account_token)
+
+
+def can_manage_service():
+    if not logged_in():
+        return False
+    users = set(manager.list())
+    return users == {session["username"]}
 
 
 def login_required(func):
@@ -117,13 +135,27 @@ def login_required(func):
     return decorated_view
 
 
-def setup_or_login_required(func):
-    """Allow unauthenticated access only while no account exists."""
+def setup_required(func):
+    """Allow account creation only during initial setup."""
 
     @wraps(func)
     def decorated_view(*args, **kwargs):
-        if not logged_in() and any(manager.list()):
+        if any(manager.list()):
+            if logged_in():
+                abort(403)
             return redirect(url_for("login"))
+        return func(*args, **kwargs)
+
+    return decorated_view
+
+
+def sole_account_required(func):
+    """Restrict process-wide management actions to single-account installs."""
+
+    @wraps(func)
+    def decorated_view(*args, **kwargs):
+        if not can_manage_service():
+            abort(403)
         return func(*args, **kwargs)
 
     return decorated_view
@@ -203,7 +235,7 @@ def login():
     else:
         errors = form.errors
 
-    return render_template("login.html", form=form, errors=errors)
+    return render_template("login.html", form=form, errors=errors, setup_available=not any(manager.list()))
 
 
 @app.route("/logout/", methods=["POST"])
@@ -231,6 +263,7 @@ def shutdown_response():
 
 @app.route("/shutdown/", methods=["POST"])
 @login_required
+@sole_account_required
 def shutdown():
     form = FlaskForm(request.form)
     if form.validate_on_submit():
@@ -247,6 +280,7 @@ def shutdown_success():
 
 @app.route("/certgen/", methods=["GET", "POST"])
 @login_required
+@sole_account_required
 def certgen():
     if request.method == "GET":
         return redirect(url_for("account_list"))
@@ -262,7 +296,7 @@ def certgen():
 
 
 @app.route("/add/", methods=["GET", "POST"])
-@setup_or_login_required
+@setup_required
 def add_user():
     errors = None
     form = AddUserForm(request.form)
@@ -282,7 +316,7 @@ def add_user():
 
 
 @app.route("/add_legacy/", methods=["GET", "POST"])
-@setup_or_login_required
+@setup_required
 def add_user_legacy():
     errors = None
     form = AddUserLegacyForm(request.form)

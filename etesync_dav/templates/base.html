@@ -301,10 +301,12 @@ a:hover {
       <h1 class="d-inline">{% block title %}EteSync DAV Management <small>({{ version }})</small>{% endblock %}</h1>
       {% if session["username"] %}
       <div class="d-inline ml-auto my-auto">
+        {% if can_manage_service %}
         <form class="d-inline" style="padding-right: 0.5em;" method="post" action="{{ url_for('shutdown') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
           <button class="btn btn-danger">Shutdown</button>
         </form>
+        {% endif %}
         <form class="d-inline" method="post" action="{{ url_for('logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
           <button class="btn btn-secondary">Logout</button>
