@@ -10,7 +10,7 @@ from radicale.storage import (
     ComponentNotFoundError,
 )
 
-from ..local_cache.models import HrefMapper
+from ..local_cache.models import HrefMapper, ItemEntity
 
 
 class MetaMapping:
@@ -237,13 +237,21 @@ class Collection(BaseCollection):
                 return True
         return False
 
+    def _get_href_mapper(self, href):
+        return (
+            HrefMapper.select()
+            .join(ItemEntity)
+            .where((HrefMapper.href == href) & (ItemEntity.collection == self.collection.cache_col))
+            .get()
+        )
+
     def _get(self, href):
         """Fetch a single item."""
         if self.is_fake:
             return
 
         try:
-            href_mapper = HrefMapper.get(HrefMapper.href == href)
+            href_mapper = self._get_href_mapper(href)
             uid = href_mapper.content.uid
         except HrefMapper.DoesNotExist:
             return None

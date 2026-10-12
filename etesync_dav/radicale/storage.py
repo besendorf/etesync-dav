@@ -375,13 +375,21 @@ class Collection(BaseCollection):
                 return True
         return False
 
+    def _get_href_mapper(self, href):
+        return (
+            HrefMapper.select()
+            .join(api.pim.Content)
+            .where((HrefMapper.href == href) & (api.pim.Content.journal == self.journal._cache_obj))
+            .get()
+        )
+
     def _get(self, href):
         """Fetch a single item."""
         if self.is_fake:
             return
 
         try:
-            href_mapper = HrefMapper.get(HrefMapper.href == href)
+            href_mapper = self._get_href_mapper(href)
             uid = href_mapper.content.uid
         except HrefMapper.DoesNotExist:
             return None
